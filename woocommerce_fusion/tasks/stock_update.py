@@ -13,26 +13,25 @@ verify_ssl = not frappe._dev_server
 def update_stock_levels_for_woocommerce_item(doc, method):
 	if not frappe.flags.in_test:
 		if doc.doctype in ("Stock Entry", "Stock Reconciliation", "Sales Invoice", "Delivery Note"):
-			# Check if there are any enabled WooCommerce Servers with stock sync enabled
-			if (
-				len(
-					frappe.get_list(
-						"WooCommerce Server",
-						filters={"enable_sync": 1, "enable_stock_level_synchronisation": 1},
-					)
-				)
-				> 0
+			# Check if there are any enabled WooCommerce Servers with stock sync enabled.
+			# This is an internal configuration lookup: it must not depend on the permissions of the user who
+			# submits or cancels the document (a user who cannot read WooCommerce Server must still be able to
+			# submit an invoice, a stock entry or a delivery note), and it returns at once when no server is set up.
+			if not frappe.db.exists(
+				"WooCommerce Server",
+				{"enable_sync": 1, "enable_stock_level_synchronisation": 1},
 			):
-				if doc.doctype == "Sales Invoice":
-					if doc.update_stock == 0:
-						return
-				item_codes = [row.item_code for row in doc.items]
-				for item_code in item_codes:
-					frappe.enqueue(
-						"woocommerce_fusion.tasks.stock_update.update_stock_levels_on_woocommerce_site",
-						enqueue_after_commit=True,
-						item_code=item_code,
-					)
+				return
+			if doc.doctype == "Sales Invoice":
+				if doc.update_stock == 0:
+					return
+			item_codes = [row.item_code for row in doc.items]
+			for item_code in item_codes:
+				frappe.enqueue(
+					"woocommerce_fusion.tasks.stock_update.update_stock_levels_on_woocommerce_site",
+					enqueue_after_commit=True,
+					item_code=item_code,
+				)
 
 
 def update_stock_levels_for_all_enabled_items_in_background():
